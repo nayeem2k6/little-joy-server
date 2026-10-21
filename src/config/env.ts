@@ -12,7 +12,7 @@ const schema = z.object({
   COOKIE_NAME: z.string().default("littlejoy_token"),
   COOKIE_SECURE: z.string().default("false").transform((value) => value === "true"),
   COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
-  CORS_ORIGINS: z.string().default("http://localhost:3000,http://localhost:5173"),
+  CORS_ORIGINS: z.string().default("https://little-joy-seven.vercel.app,https://little-joy-server.onrender.com"),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().positive().default(900000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   DELIVERY_FEE: z.coerce.number().finite().min(0).default(0),
