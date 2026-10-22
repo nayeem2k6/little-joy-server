@@ -108,4 +108,10 @@ router.get("/my-orders", requireAuth, asyncHandler(async (req, res) => {
   sendSuccess(res, { items: orders });
 }));
 
+router.get("/:id", requireAuth, asyncHandler(async (req, res) => {
+  const order = await Order.findOne({ _id: req.params.id, user: req.user!.id }).lean();
+  if (!order) throw new AppError(404, "ORDER_NOT_FOUND", "Order not found");
+  sendSuccess(res, { order });
+}));
+
 export default router;

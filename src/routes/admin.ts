@@ -33,6 +33,7 @@ const productFields = z.object({
   category: z.string().regex(/^[a-f\d]{24}$/i),
   imageUrl: z.string().trim().max(2000).optional().default(""),
   images: z.array(z.string().trim().url().max(2000)).max(20).optional(),
+  featured: z.boolean().optional().default(false),
   ageRecommendation: z.string().trim().max(100).optional().default(""),
   safetyInformation: z.string().trim().max(2000).optional().default(""),
   active: z.boolean().optional().default(true)
@@ -99,6 +100,15 @@ const customerQuery = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20)
 });
+const adminProductQuery = z.object({
+  search: z.string().trim().max(100).optional(),
+  category: z.string().regex(/^[a-f\d]{24}$/i).optional(),
+  stock: z.enum(["all", "in-stock", "out-of-stock"]).default("all"),
+  featured: z.enum(["all", "featured", "not-featured"]).default("all"),
+  status: z.enum(["all", "active", "archived"]).default("all"),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
 
 router.use(requireAuth, requireRole("admin"));
 
@@ -133,31 +143,46 @@ router.get("/customers", validate(customerQuery, "query"), asyncHandler(async (r
 router.get("/dashboard", asyncHandler(async (_req, res) => {
   const [products, categories, orders, customers, revenue] = await Promise.all([
     Product.countDocuments(), Category.countDocuments(), Order.countDocuments(),
-    (await import("../models/User")).User.countDocuments({ role: "customer" }),
-    Order.aggregate([{ $match: { status: { $ne: "cancelled" } } }, { $group: { _id: null, total: { $sum: "$total" } } }])
+    User.countDocuments({ role: "customer" }),
+    Order.aggregate([{ $match: { status: "delivered" } }, { $group: { _id: null, total: { $sum: "$total" } } }])
   ]);
-  const recentOrders = await Order.find().populate("user", "name email phone")
+  const recentOrders = await Order.find().select("orderNumber status total createdAt")
     .sort({ createdAt: -1 }).limit(5).lean();
-  const recentWithCustomer = recentOrders.map((order) => ({ ...order, customer: order.user }));
   sendSuccess(res, {
     counts: { products, categories, orders, customers },
     products, categories, orders, customers,
     revenue: revenue[0]?.total ?? 0,
-    recentOrders: recentWithCustomer
+    recentOrders
   });
 }));
 
-router.get("/products", asyncHandler(async (req, res) => {
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+router.get("/products", validate(adminProductQuery, "query"), asyncHandler(async (req, res) => {
+  const { search, category, stock, featured, status, page, limit } =
+    (req as typeof req & { validated: z.infer<typeof adminProductQuery> }).validated;
+  const filter: Record<string, unknown> = {};
+  if (search) filter.name = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), $options: "i" };
+  if (category) filter.category = category;
+  if (stock === "in-stock") filter.stock = { $gt: 0 };
+  if (stock === "out-of-stock") filter.stock = { $lte: 0 };
+  if (featured === "featured") filter.featured = true;
+  if (featured === "not-featured") filter.featured = { $ne: true };
+  if (status === "active") filter.active = true;
+  if (status === "archived") filter.active = false;
   const [items, total] = await Promise.all([
-    Product.find().populate("category", "name slug").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
-    Product.countDocuments()
+    Product.find(filter).populate("category", "name slug").sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    Product.countDocuments(filter)
   ]);
   sendSuccess(res, { items, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
 }));
 
+async function assertActiveCategory(categoryId: string): Promise<void> {
+  if (!await Category.exists({ _id: categoryId, active: true })) {
+    throw new AppError(400, "INVALID_CATEGORY", "Choose an active category");
+  }
+}
+
 router.post("/products", validate(productInput), asyncHandler(async (req, res) => {
+  await assertActiveCategory(req.body.category);
   const product = await Product.create(req.body);
   sendSuccess(res, { product }, 201);
 }));
@@ -166,6 +191,9 @@ router.patch("/products/:id", validate(productPatch), asyncHandler(async (req, r
   const current = await Product.findById(req.params.id);
   if (!current) throw new AppError(404, "PRODUCT_NOT_FOUND", "Product not found");
   const update: Record<string, unknown> = { ...req.body };
+  if (typeof update.category === "string" && update.category !== current.category.toString()) {
+    await assertActiveCategory(update.category);
+  }
   if (update.stock !== undefined || update.stockQuantity !== undefined) {
     const stock = update.stock ?? update.stockQuantity;
     update.stock = stock;

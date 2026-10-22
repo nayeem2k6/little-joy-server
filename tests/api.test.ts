@@ -22,15 +22,27 @@ describe("LittleJoy API", () => {
     const customer = await request(app).get("/api/auth/me").expect(401);
     const orders = await request(app).get("/api/orders/my-orders").expect(401);
     const admin = await request(app).get("/api/admin/dashboard").expect(401);
+    const adminProductCreate = await request(app).post("/api/admin/products").send({}).expect(401);
     const customers = await request(app).get("/api/admin/customers").expect(401);
     const couponAdmin = await request(app).get("/api/admin/coupons").expect(401);
     const reviewAdmin = await request(app).get("/api/admin/reviews").expect(401);
     expect(customer.body.error.code).toBe("UNAUTHENTICATED");
     expect(orders.body.error.code).toBe("UNAUTHENTICATED");
     expect(admin.body.error.code).toBe("UNAUTHENTICATED");
+    expect(adminProductCreate.body).toMatchObject({
+      success: false,
+      error: { code: "UNAUTHENTICATED", message: "Authentication required" }
+    });
     expect(customers.body.error.code).toBe("UNAUTHENTICATED");
     expect(couponAdmin.body.error.code).toBe("UNAUTHENTICATED");
     expect(reviewAdmin.body.error.code).toBe("UNAUTHENTICATED");
+  });
+
+  it("protects profile updates and order details when no auth cookie is present", async () => {
+    const profile = await request(app).patch("/api/auth/profile").send({ name: "Updated Name" }).expect(401);
+    const order = await request(app).get("/api/orders/0123456789abcdef01234567").expect(401);
+    expect(profile.body.error.code).toBe("UNAUTHENTICATED");
+    expect(order.body.error.code).toBe("UNAUTHENTICATED");
   });
 
   it("requires authentication to submit verified-purchase reviews", async () => {
@@ -54,6 +66,11 @@ describe("LittleJoy API", () => {
     expect(response.body.error.code).toBe("VALIDATION_ERROR");
   });
 
+  it("validates featured product filters", async () => {
+    const response = await request(app).get("/api/products?featured=maybe").expect(400);
+    expect(response.body.error.code).toBe("VALIDATION_ERROR");
+  });
+
   it("returns a consistent client error for malformed JSON", async () => {
     const response = await request(app)
       .post("/api/auth/login")
@@ -68,7 +85,10 @@ describe("LittleJoy API", () => {
       .get("/health")
       .set("Origin", "https://untrusted.example")
       .expect(403);
-    expect(response.body.error.code).toBe("CORS_ORIGIN_DENIED");
+    expect(response.body).toMatchObject({
+      success: false,
+      error: { code: "CORS_ORIGIN_DENIED", message: "Origin is not allowed by CORS" }
+    });
   });
 
   it("allows the configured frontend origin to send cookies", async () => {
@@ -78,5 +98,14 @@ describe("LittleJoy API", () => {
       .expect(200);
     expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
     expect(response.headers["access-control-allow-credentials"]).toBe("true");
+  });
+
+  it("reports Google sign-in as unavailable until configured", async () => {
+    const response = await request(app)
+      .post("/api/auth/google")
+      .send({ credential: "test-credential" })
+      .expect(503);
+
+    expect(response.body.error.code).toBe("GOOGLE_AUTH_NOT_CONFIGURED");
   });
 });

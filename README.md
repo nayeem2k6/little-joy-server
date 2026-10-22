@@ -5,14 +5,14 @@ An Express/TypeScript/Mongoose backend for the LittleJoy Toys storefront. This i
 ## Setup
 
 1. Use Node.js 20+ and a MongoDB replica set (transactions are required for checkout/cancellation consistency).
-2. Copy `.env.example` to `.env`, set a unique random `JWT_SECRET` of at least 32 characters, and configure `MONGODB_URI`, `CORS_ORIGINS`, and cookie settings. The application does not include MongoDB or JWT credential fallbacks; production startup requires explicit values.
+2. Copy `.env.example` to `.env`, set a unique random `JWT_SECRET` of at least 32 characters, and configure `MONGODB_URI`, `GOOGLE_CLIENT_ID`, `CORS_ORIGINS`, and cookie settings. The application does not include MongoDB or JWT credential fallbacks; production startup requires explicit values.
 3. Run `npm install`, `npm run dev`; the API defaults to port 4000.
 4. In separate commands as needed, set `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` (minimum 12 characters) and run `npm run admin:provision`. Provisioning refuses to change an existing admin or promote an existing account.
 5. Run `npm run seed` to upsert demo categories/products.
-6. For an existing database created by an earlier backend version, stop the API and run `npm run migrate:storefront` once before deployment. It backfills product slugs/stock aliases/images, category images, and order numbers/delivery fields. New databases do not need this migration.
+6. For an existing database created by an earlier backend version, back up the database, verify the migration against a staging copy, then run `npm run migrate:storefront` once before deployment. It backfills legacy product fields (including active/featured defaults), category active/image fields, and order numbers/delivery fields without replacing existing product safety text. Do not run it against production without explicit approval. New databases do not need this migration.
 7. `npm run build` compiles the application; `npm test` runs focused API and service tests.
 
-Authentication uses a signed JWT in an HTTP-only cookie; browsers must send credentials on cross-origin requests. `COOKIE_SAME_SITE` defaults to `lax` locally and `none` in production, while `COOKIE_SECURE` defaults to `true` in production. For separately hosted Vercel and Render origins, use HTTPS, `COOKIE_SAME_SITE=none`, `COOKIE_SECURE=true`, and exact CORS origins; the API refuses `SameSite=None` without secure cookies. Browser third-party-cookie policies can still block cross-site cookies, so same-site custom domains (for example `shop.example.com` and `api.example.com`) are recommended. Admin provisioning is intentionally separate from public registration.
+Authentication supports email/password and Google Identity Services ID tokens. Google tokens are verified by the backend against `GOOGLE_CLIENT_ID`; unverified Google email addresses are rejected. Sessions use signed JWTs in HTTP-only cookies. The frontend's Next.js `/api` rewrite proxies to the backend so the browser handles these as first-party cookies; production cookies default to `Secure` and `SameSite=Lax`. Keep exact frontend origins in `CORS_ORIGINS`. Admin provisioning is intentionally separate from public registration.
 
 ## Response shape
 
@@ -30,14 +30,17 @@ Successful responses use `{ "success": true, "data": ... }`. Failures use `{ "su
 | GET | `/api/categories` | Public | Active categories |
 | POST | `/api/auth/register` | Public, rate-limited | Register customer (`name`, `email`, `password`, optional `phone`) |
 | POST | `/api/auth/login` | Public, rate-limited | Login (`email`, `password`) |
+| POST | `/api/auth/google` | Public, rate-limited | Verify Google ID credential and sign in/create customer |
 | POST | `/api/auth/logout` | Public | Clear auth cookie |
 | GET | `/api/auth/me` | Customer/admin | Current signed-in user |
+| PATCH | `/api/auth/profile` | Customer/admin | Update only the signed-in user's name and phone |
 | POST | `/api/orders` | Customer/admin | COD checkout (`items: [{productId, quantity}]`, `shippingAddress: {fullName, phone, addressLine1, addressLine2?, city, postalCode, country}`, optional `couponCode`) |
 | GET | `/api/orders/my-orders` | Customer/admin | Current user's orders |
-| GET | `/api/admin/dashboard` | Admin | Summary counts and non-cancelled order revenue |
+| GET | `/api/orders/:id` | Customer/admin | Order details, scoped to the signed-in owner |
+| GET | `/api/admin/dashboard` | Admin | Live counts, delivered order value, and minimal recent-order summaries |
 | GET | `/api/admin/customers` | Admin | Customer-only directory with safe fields and pagination (`page`, `limit`); includes `orderCount`, never password/token fields |
-| GET | `/api/admin/products` | Admin | All products, paginated |
-| POST | `/api/admin/products` | Admin | Create product (`name`, optional `slug` generated from name, `description`, `price`, either `stock` or `stockQuantity`, `category`, optional `compareAtPrice`, `images`, legacy `imageUrl`, `ageRecommendation`, `safetyInformation`, `active`) |
+| GET | `/api/admin/products` | Admin | All products, paginated; optional `search`, category ObjectId, `stock`, `featured`, and active/archive `status` filters |
+| POST | `/api/admin/products` | Admin | Create product (`name`, optional `slug` generated from name, `description`, `price`, either `stock` or `stockQuantity`, active `category` ObjectId, optional `compareAtPrice`, `images`, legacy `imageUrl`, `featured`, `ageRecommendation`, `safetyInformation`, `active`) |
 | PATCH | `/api/admin/products/:id` | Admin | Update product fields; `stock`/`stockQuantity` aliases are synchronized, image arrays and legacy `imageUrl` are kept compatible |
 | DELETE | `/api/admin/products/:id` | Admin | Soft-disable a product |
 | GET | `/api/admin/categories` | Admin | All categories |
@@ -59,7 +62,7 @@ Product payloads expose `slug`, `price`, nullable `compareAtPrice`, both `stock`
 
 Every new order has a unique `orderNumber` (`LJ-...`), `items`, `shippingAddress`, `subtotal`, coupon discount snapshot when used, `deliveryFee`, `total`, `paymentMethod`, `status`, `customerPhone`, and timestamps. Total is product subtotal minus server-validated coupon discount plus server-configured delivery fee. The fee is never accepted from checkout input. `DELIVERY_FEE` is a nonnegative flat amount (default `0`); optional `FREE_DELIVERY_THRESHOLD` makes delivery free when the pre-discount product subtotal meets that amount. Both values use the store's chosen currency units.
 
-Admin order-list and dashboard recent-order entries include both `user` and `customer` populated with `{_id, name, email, phone?}`. Dashboard returns `counts: {products,categories,orders,customers}`, matching top-level count aliases, non-cancelled `revenue`, and the five newest `recentOrders`. Popular catalog sorting uses sold quantity from non-cancelled orders, then newest as a stable fallback. Checkout and cancellation use MongoDB transactions. Cancelling an order is allowed only from `pending`, `confirmed`, or `processing`; status change, stock restoration, and coupon-use release commit atomically. Repeated cancellation is idempotent and does not restock twice. Delivered orders are eligible for reviews; reviews remain hidden publicly until an admin approves them. A replica-set-capable MongoDB deployment is therefore required; standalone MongoDB instances cannot run checkout or cancellation transactions.
+Admin order-list entries include customer and delivery details; dashboard recent-order summaries intentionally omit those details. Dashboard returns `counts: {products,categories,orders,customers}`, matching top-level count aliases, delivered-order value, and the five newest summaries. Product `featured` is an optional boolean that defaults to `false`, including for existing documents. Popular catalog sorting uses sold quantity from non-cancelled orders, then newest as a stable fallback. Checkout and cancellation use MongoDB transactions. Cancelling an order is allowed only from `pending`, `confirmed`, or `processing`; status change, stock restoration, and coupon-use release commit atomically. Repeated cancellation is idempotent and does not restock twice. Delivered orders are eligible for reviews; reviews remain hidden publicly until an admin approves them. A replica-set-capable MongoDB deployment is therefore required; standalone MongoDB instances cannot run checkout or cancellation transactions.
 
 ## Checks
 

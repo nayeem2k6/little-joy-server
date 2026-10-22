@@ -18,6 +18,7 @@ const productQuery = z.object({
   category: z.string().optional(),
   minPrice: z.coerce.number().finite().min(0).optional(),
   maxPrice: z.coerce.number().finite().min(0).optional(),
+  featured: z.enum(["true", "false"]).transform((value) => value === "true").optional(),
   sort: z.enum(["newest", "price-asc", "price-desc", "popular"]).default("newest"),
   availability: z.preprocess((value) => {
     if (value === "true") return "in-stock";
@@ -62,9 +63,10 @@ router.post("/products/:id/reviews", requireAuth, requireRole("customer"), valid
 }));
 
 router.get("/products", validate(productQuery, "query"), asyncHandler(async (req, res) => {
-  const { search, category, minPrice, maxPrice, sort, availability, page, limit } =
+  const { search, category, minPrice, maxPrice, featured, sort, availability, page, limit } =
     (req as typeof req & { validated: z.infer<typeof productQuery> }).validated;
   const filter: Record<string, unknown> = { active: true };
+  if (featured !== undefined) filter.featured = featured;
   if (search) filter.$text = { $search: search };
   if (minPrice !== undefined || maxPrice !== undefined) {
     filter.price = {

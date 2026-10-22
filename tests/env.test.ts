@@ -2,16 +2,17 @@ import { describe, expect, it } from "vitest";
 import { assertProductionSecrets, parseEnvironment } from "../src/config/env";
 
 describe("environment configuration", () => {
-  it("uses secure cross-site cookie defaults in production", () => {
+  it("uses secure cookie defaults in production", () => {
     const configuration = parseEnvironment({
       NODE_ENV: "production",
       MONGODB_URI: "mongodb://localhost/littlejoy",
       JWT_SECRET: "x".repeat(32),
+      GOOGLE_CLIENT_ID: "google-client-id",
       CORS_ORIGINS: "https://little-joy-seven.vercel.app"
     });
 
     expect(configuration.COOKIE_SECURE).toBe(true);
-    expect(configuration.COOKIE_SAME_SITE).toBe("none");
+    expect(configuration.COOKIE_SAME_SITE).toBe("lax");
     expect(() => assertProductionSecrets(configuration)).not.toThrow();
   });
 
@@ -23,11 +24,12 @@ describe("environment configuration", () => {
     expect(() => assertProductionSecrets(configuration)).toThrow("MONGODB_URI must be explicitly configured");
   });
 
-  it("rejects production cookie settings that cannot authenticate cross-site requests", () => {
+  it("rejects insecure cookies when production cookies are required", () => {
     const configuration = parseEnvironment({
       NODE_ENV: "production",
       MONGODB_URI: "mongodb://localhost/littlejoy",
       JWT_SECRET: "x".repeat(32),
+      GOOGLE_CLIENT_ID: "google-client-id",
       CORS_ORIGINS: "https://little-joy-seven.vercel.app",
       COOKIE_SECURE: "false",
       COOKIE_SAME_SITE: "lax"

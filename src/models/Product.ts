@@ -11,6 +11,7 @@ const productSchema = new Schema({
   category: { type: Schema.Types.ObjectId, ref: "Category", required: true, index: true },
   imageUrl: { type: String, trim: true, default: "" },
   images: { type: [String], default: [] },
+  featured: { type: Boolean, default: false },
   ageRecommendation: { type: String, trim: true, maxlength: 100, default: "" },
   safetyInformation: { type: String, trim: true, maxlength: 2000, default: "" },
   active: { type: Boolean, default: true, index: true }

@@ -5,8 +5,9 @@ export type UserRole = "customer" | "admin";
 export interface UserFields {
   name: string;
   email: string;
-  password: string;
+  password?: string;
   role: UserRole;
+  googleId?: string;
   phone?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -19,16 +20,18 @@ type UserModel = Model<UserFields, object, UserMethods>;
 const userSchema = new Schema<UserFields, UserModel, UserMethods>({
   name: { type: String, required: true, trim: true, maxlength: 100 },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 254 },
-  password: { type: String, required: true, select: false },
+  password: { type: String, select: false },
   role: { type: String, enum: ["customer", "admin"], default: "customer", required: true },
+  googleId: { type: String, unique: true, sparse: true, select: false },
   phone: { type: String, trim: true, maxlength: 30 }
 }, { timestamps: true });
 
 userSchema.pre("save", async function () {
-  if (this.isModified("password")) this.password = await bcrypt.hash(this.password, 12);
+  if (this.isModified("password") && this.password) this.password = await bcrypt.hash(this.password, 12);
 });
 userSchema.method("comparePassword", async function (candidate: string) {
-  return bcrypt.compare(candidate, this.password);
+  const password = this.password;
+  return password ? bcrypt.compare(candidate, password) : false;
 });
 
 export type UserDocument = HydratedDocument<UserFields, UserMethods>;

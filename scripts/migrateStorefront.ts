@@ -9,7 +9,16 @@ async function migrate(): Promise<void> {
   await connectDatabase();
   try {
     const usedSlugs = new Set((await Product.distinct("slug").exec()).filter((slug): slug is string => typeof slug === "string" && Boolean(slug)));
-    const products = await Product.find({ $or: [{ slug: { $exists: false } }, { stockQuantity: { $exists: false } }] }).select("_id name slug stock stockQuantity imageUrl images");
+    const products = await Product.find({ $or: [
+      { slug: { $exists: false } },
+      { stockQuantity: { $exists: false } },
+      { images: { $exists: false } },
+      { imageUrl: { $exists: false } },
+      { ageRecommendation: { $exists: false } },
+      { safetyInformation: { $exists: false } },
+      { active: { $exists: false } },
+      { featured: { $exists: false } }
+    ] }).select("_id name slug stock stockQuantity imageUrl images ageRecommendation safetyInformation active featured");
     for (const product of products) {
       let slug = product.slug || slugifyProductName(product.name) || `product-${product.id}`;
       if (!product.slug) {
@@ -27,13 +36,16 @@ async function migrate(): Promise<void> {
           stockQuantity: stock,
           images,
           imageUrl: product.imageUrl || images[0] || "",
-          ageRecommendation: "",
-          safetyInformation: ""
+          ageRecommendation: product.ageRecommendation ?? "",
+          safetyInformation: product.safetyInformation ?? "",
+          active: product.active ?? true,
+          featured: product.featured ?? false
         }
       });
     }
 
     await Category.updateMany({ imageUrl: { $exists: false } }, { $set: { imageUrl: "" } });
+    await Category.updateMany({ active: { $exists: false } }, { $set: { active: true } });
     await Order.updateMany({ deliveryFee: { $exists: false } }, { $set: { deliveryFee: 0 } });
     await Order.updateMany({ customerPhone: { $exists: false } }, [
       { $set: { customerPhone: { $ifNull: ["$shippingAddress.phone", ""] } } }
