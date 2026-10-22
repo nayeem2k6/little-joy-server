@@ -70,4 +70,13 @@ describe("LittleJoy API", () => {
       .expect(403);
     expect(response.body.error.code).toBe("CORS_ORIGIN_DENIED");
   });
+
+  it("allows the configured frontend origin to send cookies", async () => {
+    const response = await request(app)
+      .get("/health")
+      .set("Origin", "http://localhost:3000")
+      .expect(200);
+    expect(response.headers["access-control-allow-origin"]).toBe("http://localhost:3000");
+    expect(response.headers["access-control-allow-credentials"]).toBe("true");
+  });
 });

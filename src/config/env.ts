@@ -3,30 +3,50 @@ import { z } from "zod";
 
 dotenv.config();
 
+const optionalValue = z.preprocess((value) => value === "" ? undefined : value, z.string().min(1).optional());
 const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().positive().default(4000),
-  MONGODB_URI: z.string().min(1).default("mongodb+srv://toy:CpL4f33RbMiuOg7c@cluster0.7cujx3q.mongodb.net/toy?retryWrites=true&w=majority"),
-  JWT_SECRET: z.string().min(32).default("development-only-secret-change-this-before-deployment"),
+  MONGODB_URI: optionalValue,
+  JWT_SECRET: z.preprocess((value) => value === "" ? undefined : value, z.string().min(32).optional()),
   JWT_EXPIRES_IN: z.string().default("7d"),
   COOKIE_NAME: z.string().default("littlejoy_token"),
-  COOKIE_SECURE: z.string().default("false").transform((value) => value === "true"),
-  COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).default("lax"),
-  CORS_ORIGINS: z.string().default("https://little-joy-seven.vercel.app,https://little-joy-server.onrender.com"),
+  COOKIE_SECURE: z.enum(["true", "false"]).optional().transform((value) => value === undefined ? undefined : value === "true"),
+  COOKIE_SAME_SITE: z.enum(["lax", "strict", "none"]).optional(),
+  CORS_ORIGINS: z.string().optional(),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().positive().default(900000),
   AUTH_RATE_LIMIT_MAX: z.coerce.number().int().positive().default(20),
   DELIVERY_FEE: z.coerce.number().finite().min(0).default(0),
   FREE_DELIVERY_THRESHOLD: z.coerce.number().finite().min(0).optional()
 });
 
-export const env = schema.parse(process.env);
+export function parseEnvironment(source: NodeJS.ProcessEnv = process.env) {
+  const parsed = schema.parse(source);
+  return {
+    ...parsed,
+    COOKIE_SECURE: parsed.COOKIE_SECURE ?? parsed.NODE_ENV === "production",
+    COOKIE_SAME_SITE: parsed.COOKIE_SAME_SITE ?? (parsed.NODE_ENV === "production" ? "none" : "lax"),
+    CORS_ORIGINS: parsed.CORS_ORIGINS ?? (parsed.NODE_ENV === "production" ? "" : "http://localhost:3000")
+  };
+}
+
+export const env = parseEnvironment();
 export const corsOrigins = env.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);
 
-export function assertProductionSecrets(): void {
-  if (env.COOKIE_SAME_SITE === "none" && !env.COOKIE_SECURE) {
+export function assertProductionSecrets(configuration = env): void {
+  if (configuration.NODE_ENV === "production") {
+    if (!configuration.MONGODB_URI) throw new Error("MONGODB_URI must be explicitly configured in production");
+    if (!configuration.JWT_SECRET) throw new Error("JWT_SECRET must be explicitly configured in production");
+    if (!configuration.CORS_ORIGINS.trim()) throw new Error("CORS_ORIGINS must be explicitly configured in production");
+    if (!configuration.COOKIE_SECURE) throw new Error("COOKIE_SECURE must be true in production");
+    if (configuration.COOKIE_SAME_SITE !== "none") throw new Error("COOKIE_SAME_SITE must be none for the cross-site production frontend and API");
+  }
+  if (configuration.COOKIE_SAME_SITE === "none" && !configuration.COOKIE_SECURE) {
     throw new Error("COOKIE_SECURE must be true when COOKIE_SAME_SITE=none");
   }
-  if (env.NODE_ENV === "production" && env.JWT_SECRET === "development-only-secret-change-this-before-deployment") {
-    throw new Error("JWT_SECRET must be explicitly configured in production");
-  }
+}
+
+export function getJwtSecret(): string {
+  if (!env.JWT_SECRET) throw new Error("JWT_SECRET must be configured before using authentication");
+  return env.JWT_SECRET;
 }

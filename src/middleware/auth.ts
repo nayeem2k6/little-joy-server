@@ -1,6 +1,6 @@
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
-import { env } from "../config/env";
+import { env, getJwtSecret } from "../config/env";
 import { User, UserRole } from "../models/User";
 import { AppError } from "../utils/errors";
 
@@ -18,7 +18,7 @@ declare global {
 }
 
 export function issueToken(user: AuthUser): string {
-  return jwt.sign({ sub: user.id, role: user.role }, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] });
+  return jwt.sign({ sub: user.id, role: user.role }, getJwtSecret(), { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions["expiresIn"] });
 }
 
 export function setAuthCookie(res: Response, token: string): void {
@@ -41,18 +41,40 @@ export function clearAuthCookie(res: Response): void {
 }
 
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const token = req.cookies?.[env.COOKIE_NAME];
+  if (!token) {
+    next(new AppError(401, "UNAUTHENTICATED", "Authentication required"));
+    return;
+  }
+
+  let payload: jwt.JwtPayload;
   try {
-    const token = req.cookies?.[env.COOKIE_NAME];
-    if (!token) throw new AppError(401, "UNAUTHENTICATED", "Authentication required");
-    const payload = jwt.verify(token, env.JWT_SECRET) as jwt.JwtPayload;
-    const userId = payload.sub;
-    if (typeof userId !== "string") throw new AppError(401, "INVALID_TOKEN", "Invalid authentication token");
+    payload = jwt.verify(token, getJwtSecret()) as jwt.JwtPayload;
+  } catch (error) {
+    if (error instanceof jwt.JsonWebTokenError) {
+      next(new AppError(401, "INVALID_TOKEN", "Invalid or expired authentication token"));
+    } else {
+      next(error);
+    }
+    return;
+  }
+
+  const userId = payload.sub;
+  if (typeof userId !== "string") {
+    next(new AppError(401, "INVALID_TOKEN", "Invalid authentication token"));
+    return;
+  }
+
+  try {
     const user = await User.findById(userId).select("name email phone role").lean();
-    if (!user) throw new AppError(401, "UNAUTHENTICATED", "Authentication required");
+    if (!user) {
+      next(new AppError(401, "UNAUTHENTICATED", "Authentication required"));
+      return;
+    }
     req.user = { id: user._id.toString(), name: user.name, email: user.email, phone: user.phone, role: user.role };
     next();
   } catch (error) {
-    next(error instanceof AppError ? error : new AppError(401, "INVALID_TOKEN", "Invalid or expired authentication token"));
+    next(error);
   }
 }
 

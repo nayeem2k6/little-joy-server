@@ -5,14 +5,14 @@ An Express/TypeScript/Mongoose backend for the LittleJoy Toys storefront. This i
 ## Setup
 
 1. Use Node.js 20+ and a MongoDB replica set (transactions are required for checkout/cancellation consistency).
-2. Copy `.env.example` to `.env`, set a unique random `JWT_SECRET` of at least 32 characters, and configure `MONGODB_URI`, `CORS_ORIGINS`, and cookie settings.
+2. Copy `.env.example` to `.env`, set a unique random `JWT_SECRET` of at least 32 characters, and configure `MONGODB_URI`, `CORS_ORIGINS`, and cookie settings. The application does not include MongoDB or JWT credential fallbacks; production startup requires explicit values.
 3. Run `npm install`, `npm run dev`; the API defaults to port 4000.
 4. In separate commands as needed, set `ADMIN_NAME`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD` (minimum 12 characters) and run `npm run admin:provision`. Provisioning refuses to change an existing admin or promote an existing account.
 5. Run `npm run seed` to upsert demo categories/products.
 6. For an existing database created by an earlier backend version, stop the API and run `npm run migrate:storefront` once before deployment. It backfills product slugs/stock aliases/images, category images, and order numbers/delivery fields. New databases do not need this migration.
 7. `npm run build` compiles the application; `npm test` runs focused API and service tests.
 
-Authentication uses a signed JWT in an HTTP-only cookie; browsers must send credentials on cross-origin requests. `COOKIE_SAME_SITE` defaults to `lax` locally and accepts `lax`, `strict`, or `none`. For separately hosted Vercel and Render origins, configure `COOKIE_SAME_SITE=none`, `COOKIE_SECURE=true`, HTTPS, and exact CORS origins; the API refuses `SameSite=None` without secure cookies. Browser third-party-cookie policies can still block cross-site cookies, so same-site custom domains (for example `shop.example.com` and `api.example.com`) are recommended. Admin provisioning is intentionally separate from public registration.
+Authentication uses a signed JWT in an HTTP-only cookie; browsers must send credentials on cross-origin requests. `COOKIE_SAME_SITE` defaults to `lax` locally and `none` in production, while `COOKIE_SECURE` defaults to `true` in production. For separately hosted Vercel and Render origins, use HTTPS, `COOKIE_SAME_SITE=none`, `COOKIE_SECURE=true`, and exact CORS origins; the API refuses `SameSite=None` without secure cookies. Browser third-party-cookie policies can still block cross-site cookies, so same-site custom domains (for example `shop.example.com` and `api.example.com`) are recommended. Admin provisioning is intentionally separate from public registration.
 
 ## Response shape
 
