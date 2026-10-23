@@ -35,11 +35,13 @@ export const env = parseEnvironment();
 export const corsOrigins = env.CORS_ORIGINS.split(",").map((origin) => origin.trim()).filter(Boolean);
 
 export function assertProductionSecrets(configuration = env): void {
+  const corsOrigins = typeof configuration.CORS_ORIGINS === "string" ? configuration.CORS_ORIGINS.trim() : "";
+
   if (configuration.NODE_ENV === "production") {
     if (!configuration.MONGODB_URI) throw new Error("MONGODB_URI must be explicitly configured in production");
     if (!configuration.JWT_SECRET) throw new Error("JWT_SECRET must be explicitly configured in production");
     if (!configuration.GOOGLE_CLIENT_ID) throw new Error("GOOGLE_CLIENT_ID must be explicitly configured in production");
-    if (!configuration.CORS_ORIGINS.trim()) throw new Error("CORS_ORIGINS must be explicitly configured in production");
+    if (!corsOrigins) throw new Error("CORS_ORIGINS must be explicitly configured in production");
     if (!configuration.COOKIE_SECURE) throw new Error("COOKIE_SECURE must be true in production");
   }
   if (configuration.COOKIE_SAME_SITE === "none" && !configuration.COOKIE_SECURE) {

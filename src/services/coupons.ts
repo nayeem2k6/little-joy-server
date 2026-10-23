@@ -23,6 +23,9 @@ export function calculateCouponDiscount(coupon: CouponTerms, subtotal: number, n
   if (coupon.discountValue <= 0 || (coupon.discountType === "percentage" && coupon.discountValue > 100)) {
     throw new AppError(400, "COUPON_INVALID", "Coupon terms are invalid");
   }
+  if (coupon.maxDiscount != null && coupon.maxDiscount <= 0) {
+    throw new AppError(400, "COUPON_INVALID", "Coupon terms are invalid");
+  }
   let discount = coupon.discountType === "percentage"
     ? subtotal * coupon.discountValue / 100
     : coupon.discountValue;

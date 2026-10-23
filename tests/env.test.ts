@@ -38,6 +38,19 @@ describe("environment configuration", () => {
     expect(() => assertProductionSecrets(configuration)).toThrow("COOKIE_SECURE must be true in production");
   });
 
+  it("treats missing CORS configuration as unset rather than crashing", () => {
+    const configuration = parseEnvironment({
+      NODE_ENV: "production",
+      MONGODB_URI: "mongodb://localhost/littlejoy",
+      JWT_SECRET: "x".repeat(32),
+      GOOGLE_CLIENT_ID: "google-client-id",
+      CORS_ORIGINS: undefined
+    });
+
+    expect(configuration.CORS_ORIGINS).toBe("");
+    expect(() => assertProductionSecrets(configuration)).toThrow("CORS_ORIGINS must be explicitly configured in production");
+  });
+
   it("uses local cookie and CORS defaults outside production", () => {
     const configuration = parseEnvironment({ NODE_ENV: "development" });
 

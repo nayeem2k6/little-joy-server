@@ -37,4 +37,9 @@ describe("coupon discount calculation", () => {
     expect(() => calculateCouponDiscount({ ...coupon, discountValue: 101 }, 100))
       .toThrowError(/terms are invalid/i);
   });
+
+  it("rejects negative maximum discount caps", () => {
+    expect(() => calculateCouponDiscount({ ...coupon, maxDiscount: -5 }, 100))
+      .toThrowError(/terms are invalid/i);
+  });
 });

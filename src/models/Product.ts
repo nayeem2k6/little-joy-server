@@ -20,8 +20,10 @@ const productSchema = new Schema({
 productSchema.pre("validate", function () {
   if (this.isModified("stockQuantity") && !this.isModified("stock")) this.stock = this.stockQuantity;
   else this.stockQuantity = this.stock;
-  if (this.images.length && !this.imageUrl) this.imageUrl = this.images[0];
-  else if (this.imageUrl && !this.images.length) this.images = [this.imageUrl];
+
+  const images = Array.isArray(this.images) ? this.images : [];
+  if (images.length && !this.imageUrl) this.imageUrl = images[0];
+  else if (this.imageUrl && !images.length) this.images = [this.imageUrl];
 });
 
 productSchema.index({ name: "text", description: "text" });
